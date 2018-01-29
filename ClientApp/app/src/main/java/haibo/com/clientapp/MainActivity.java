@@ -50,15 +50,7 @@ public class MainActivity extends Activity {
                 textView.setText("getBookList结果是:"+list.toString());
                 Log.e("MainActivity",list.toString());
 
-                bookManager.registerListener(new IOnNewBookArrivedListener.Stub() {
-                    @Override
-                    public void OnNewBookArrived(Book newBook) throws RemoteException {
-                        Message msg = Message.obtain();
-                        msg.obj = newBook;
-                        msg.what = 1;
-                        handler.sendMessage(msg);
-                    }
-                });
+                bookManager.registerListener(mIOnNewBookArrivedListener);
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -67,6 +59,16 @@ public class MainActivity extends Activity {
         @Override
         public void onServiceDisconnected(ComponentName name) {
             bookManager = null;
+        }
+    };
+
+    private IOnNewBookArrivedListener mIOnNewBookArrivedListener = new IOnNewBookArrivedListener.Stub() {
+        @Override
+        public void OnNewBookArrived(Book newBook) throws RemoteException {
+            Message msg = Message.obtain();
+            msg.obj = newBook;
+            msg.what = 1;
+            handler.sendMessage(msg);
         }
     };
 
@@ -86,12 +88,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         try {
-            bookManager.unregisterListener(new IOnNewBookArrivedListener.Stub() {
-                @Override
-                public void OnNewBookArrived(Book newBook) throws RemoteException {
-
-                }
-            });
+            bookManager.unregisterListener(mIOnNewBookArrivedListener);
         } catch (RemoteException e) {
             e.printStackTrace();
         }

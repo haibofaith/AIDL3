@@ -4,11 +4,13 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.util.Log;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import haibo.com.servelapp.Book;
 import haibo.com.servelapp.IBookManager;
@@ -17,9 +19,12 @@ import haibo.com.servelapp.IOnNewBookArrivedListener;
 public class BookManagerService extends Service {
 
     private CopyOnWriteArrayList<Book> mBookList = new CopyOnWriteArrayList<>();
-    private static IOnNewBookArrivedListener listener;
+    //之所以用列表，因为每个客户端都需要注册一个监听在服务端
+//    private CopyOnWriteArrayList<IOnNewBookArrivedListener> mlistener = new CopyOnWriteArrayList<>();
+    private RemoteCallbackList<IOnNewBookArrivedListener>  mListenerList = new RemoteCallbackList<>();
 
-    private boolean flag = false;
+    private AtomicBoolean flag = new AtomicBoolean();
+
 
     private Binder mBinder = new IBookManager.Stub() {
         @Override
@@ -34,15 +39,20 @@ public class BookManagerService extends Service {
 
         @Override
         public void registerListener(IOnNewBookArrivedListener listener) throws RemoteException {
-            BookManagerService.listener = listener;
-            Log.e("BookManagerService", "registerListener success");
+//            if (!mlistener.contains(listener))
+//                mlistener.add(listener);
+
+            mListenerList.register(listener);
+            Log.e("BookManagerService", "registerListener success"+mListenerList.getRegisteredCallbackCount());
         }
 
         @Override
         public void unregisterListener(IOnNewBookArrivedListener listener) throws RemoteException {
-            BookManagerService.listener = null;
-            flag = false;
-            Log.e("BookManagerService", "unregisterListener success");
+//            if (mlistener.contains(listener))
+//                mlistener.remove(listener);
+//            flag = false;
+            mListenerList.unregister(listener);
+            Log.e("BookManagerService", "unregisterListener success"+mListenerList.getRegisteredCallbackCount());
         }
     };
 
@@ -55,13 +65,11 @@ public class BookManagerService extends Service {
         super.onCreate();
         mBookList.add(new Book(1, "Android"));
         mBookList.add(new Book(2, "Ios"));
-
-        flag = true;
-
+        //这种方式的缺点就是每次有个一个客户端进来，就会生成一个新的服务端线程
         new Thread(new Runnable() {
             @Override
             public void run() {
-                while (flag) {
+                while (!flag.get()) {
                     try {
                         Thread.sleep(5000);
                     } catch (InterruptedException e) {
@@ -69,15 +77,21 @@ public class BookManagerService extends Service {
                     }
                     int bookId = mBookList.size() + 1;
                     Book newBook = new Book(bookId, "newBook" + bookId);
-                    Log.e("BookManagerService","newBook" + bookId);
+                    Log.e("BookManagerService", "newBook" + bookId);
                     mBookList.add(newBook);
-                    if (listener != null) {
-                        try {
-                            listener.OnNewBookArrived(newBook);
-                        } catch (RemoteException e) {
-                            e.printStackTrace();
+                    final int N = mListenerList.beginBroadcast();
+                    for (int i=0;i<N;i++){
+                        //对已经注册的所有监听者都发消息
+                        IOnNewBookArrivedListener listener = mListenerList.getBroadcastItem(i);
+                        if (listener != null) {
+                            try {
+                                listener.OnNewBookArrived(newBook);
+                            } catch (RemoteException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
+                    mListenerList.finishBroadcast();
                 }
             }
         }).start();
